@@ -1731,6 +1731,8 @@ int main(int argc, char *argv[])
 
 	ionoutc_t ionoutc;
 
+	FILE *ftest = fopen("./test/temp.top.csv", "wb");
+
 	////////////////////////////////////////////////////////////
 	// Read options
 	////////////////////////////////////////////////////////////
@@ -2142,6 +2144,7 @@ int main(int argc, char *argv[])
 
 	tstart = clock();
 
+	fprintf(ftest, "Time, PRN, Range, RangeRate, Gain, CarrFreq, CodeFreq, CodePhase, CodeBit, DataBit\n");
 	// Update receiver time
 	grx = incGpsTime(grx, 0.1);
 
@@ -2178,6 +2181,9 @@ int main(int argc, char *argv[])
 
 				// Signal gain
 				gain[i] = (int)(path_loss*ant_gain*128.0); // scaled by 2^7
+				fprintf(ftest, "%.4f, %d, %f, %f, %d, %f, %f, %f, %d, %d\n",
+					subGpsTime(grx, g0), chan[i].prn, rho.range, rho.rate, gain[i], chan[i].f_carr, chan[i].f_code,
+					chan[i].code_phase, chan[i].codeCA, chan[i].dataBit);
 			}
 		}
 
@@ -2358,6 +2364,6 @@ int main(int argc, char *argv[])
 
 	// Process time
 	fprintf(stderr, "Process time = %.1f [sec]\n", (double)(tend-tstart)/CLOCKS_PER_SEC);
-
+	fclose(ftest);
 	return(0);
 }
