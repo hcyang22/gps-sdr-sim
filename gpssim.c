@@ -1731,7 +1731,8 @@ int main(int argc, char *argv[])
 
 	ionoutc_t ionoutc;
 
-	FILE *ftest = fopen("./test/temp.top.csv", "wb");
+	FILE *ftest_high = fopen("./test/temp.high.csv", "wb");
+	FILE *ftest_low = fopen("./test/temp.low.csv", "wb");
 
 	////////////////////////////////////////////////////////////
 	// Read options
@@ -2144,7 +2145,8 @@ int main(int argc, char *argv[])
 
 	tstart = clock();
 
-	fprintf(ftest, "Time, PRN, Range, RangeRate, Gain, CarrFreq, CodeFreq, CodePhase, CodeBit, DataBit\n");
+	fprintf(ftest_high, "Time, PRN, Range, RangeRate, Gain, CarrFreq, CodeFreq\n");
+	fprintf(ftest_low, "Time, PRN, CodePhase, CodeBit, DataBit\n");
 	// Update receiver time
 	grx = incGpsTime(grx, 0.1);
 
@@ -2181,12 +2183,12 @@ int main(int argc, char *argv[])
 
 				// Signal gain
 				gain[i] = (int)(path_loss*ant_gain*128.0); // scaled by 2^7
-				fprintf(ftest, "%.4f, %d, %f, %f, %d, %f, %f, %f, %d, %d\n",
-					subGpsTime(grx, g0), chan[i].prn, rho.range, rho.rate, gain[i], chan[i].f_carr, chan[i].f_code,
-					chan[i].code_phase, chan[i].codeCA, chan[i].dataBit);
+				fprintf(ftest_high, "%.4f, %d, %f, %f, %d, %f, %f\n",
+					subGpsTime(grx, g0), chan[i].prn, rho.range, rho.rate, gain[i], chan[i].f_carr, chan[i].f_code);
 			}
 		}
 
+		/* double time_tag = subGpsTime(grx, g0); */
 		for (isamp=0; isamp<iq_buff_size; isamp++)
 		{
 			int i_acc = 0;
@@ -2207,6 +2209,9 @@ int main(int argc, char *argv[])
 					// Accumulate for all visible satellites
 					i_acc += ip;
 					q_acc += qp;
+
+					// Record log
+					/* fprintf(ftest_low, "%f, %d, %f, %d, %d\n", time_tag, chan[i].prn, chan[i].code_phase, chan[i].codeCA, chan[i].dataBit); */
 
 					// Update code phase
 					chan[i].code_phase += chan[i].f_code * delt;
@@ -2253,6 +2258,9 @@ int main(int argc, char *argv[])
 #endif
 				}
 			}
+
+			// Update time tag
+			/* time_tag += delt; */
 
 			// Scaled by 2^7
 			i_acc = (i_acc+64)>>7;
@@ -2361,9 +2369,10 @@ int main(int argc, char *argv[])
 
 	// Close file
 	fclose(fp);
+	fclose(ftest_high);
+	fclose(ftest_low);
 
 	// Process time
 	fprintf(stderr, "Process time = %.1f [sec]\n", (double)(tend-tstart)/CLOCKS_PER_SEC);
-	fclose(ftest);
 	return(0);
 }
