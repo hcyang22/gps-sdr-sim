@@ -1331,6 +1331,7 @@ void computeCodePhase(channel_t *chan, range_t rho1, double dt)
 	ms = ((subGpsTime(chan->rho0.g,chan->g0)+6.0) - chan->rho0.range/SPEED_OF_LIGHT)*1000.0;
 
 	ims = (int)ms;
+	// TODO: Check if this change right
 	chan->code_phase = (ms-(double)ims)*CA_SEQ_LEN; // in chip
 
 	chan->iword = ims/600; // 1 word = 30 bits = 600 ms
@@ -1582,7 +1583,7 @@ int allocateChannel(channel_t *chan, ephem_t *eph, ionoutc_t ionoutc, gpstime_t 
 
 	for (sv=0; sv<MAX_SAT; sv++)
 	{
-		if(checkSatVisibility(eph[sv], grx, xyz, 0.0, azel)==1)
+		if(checkSatVisibility(eph[sv], grx, xyz, 10, azel)==1)
 		{
 			nsat++; // Number of visible satellites
 
@@ -1732,7 +1733,7 @@ int main(int argc, char *argv[])
 	ionoutc_t ionoutc;
 
 	FILE *ftest_high = fopen("./test/temp.high.csv", "wb");
-	FILE *ftest_low = fopen("./test/temp.low.csv", "wb");
+	FILE *ftest_low = fopen("./test/temp.consi.csv", "wb");
 
 	////////////////////////////////////////////////////////////
 	// Read options
@@ -2145,8 +2146,17 @@ int main(int argc, char *argv[])
 
 	tstart = clock();
 
-	fprintf(ftest_high, "Time, PRN, Range, RangeRate, Gain, CarrFreq, CodeFreq\n");
-	fprintf(ftest_low, "Time, PRN, CodePhase, CodeBit, DataBit\n");
+	fprintf(ftest_high, "Time, PRN, Range, RangeRate, Gain, CarrFreq, CodeFreq, Azimuth, Elevation\n");
+	fprintf(ftest_low, "Time, PRN, CarrierPhase Diff, CodePhase Diff\n");
+	double last_carr_phase[MAX_CHAN], last_code_phase[MAX_CHAN];
+	for (i = 0; i < MAX_CHAN; i++)
+	{
+		if (chan[i].prn >0)
+		{
+			last_carr_phase[i] = chan[i].carr_phase;
+			last_code_phase[i] = chan[i].code_phase;
+		}
+	}
 	// Update receiver time
 	grx = incGpsTime(grx, 0.1);
 
@@ -2183,8 +2193,18 @@ int main(int argc, char *argv[])
 
 				// Signal gain
 				gain[i] = (int)(path_loss*ant_gain*128.0); // scaled by 2^7
-				fprintf(ftest_high, "%.4f, %d, %f, %f, %d, %f, %f\n",
-					subGpsTime(grx, g0), chan[i].prn, rho.range, rho.rate, gain[i], chan[i].f_carr, chan[i].f_code);
+				fprintf(ftest_high, "%.4f, %d, %f, %f, %d, %f, %f, %f, %f\n",
+					subGpsTime(grx, g0), chan[i].prn, rho.range, rho.rate, gain[i], chan[i].f_carr,
+						chan[i].f_code, chan[i].azel[0], chan[i].azel[1]);
+			}
+		}
+
+		for (i = 0; i < MAX_CHAN; i++)
+		{
+			if (chan[i].prn >0)
+			{
+				fprintf(ftest_low, "%.2f, %d, %.12f, %.12f\n", subGpsTime(grx, g0), chan[i].prn, 
+					chan[i].carr_phase - last_carr_phase[i], chan[i].code_phase - last_code_phase[i]);
 			}
 		}
 
@@ -2269,6 +2289,17 @@ int main(int argc, char *argv[])
 			// Store I/Q samples into buffer
 			iq_buff[isamp*2] = (short)i_acc;
 			iq_buff[isamp*2+1] = (short)q_acc;
+		}
+
+		for (i = 0; i < MAX_CHAN; i++)
+		{
+			if (chan[i].prn >0)
+			{
+				fprintf(ftest_low, "%.2f, %d, %.12f, %.12f\n", subGpsTime(grx, g0) + 0.05, chan[i].prn, 
+					chan[i].f_carr * delt, chan[i].f_code * delt);
+				last_carr_phase[i] = chan[i].carr_phase - chan[i].f_carr * delt;
+				last_code_phase[i] = chan[i].code_phase - chan[i].f_code * delt;
+			}
 		}
 
 		if (data_format==SC01)
