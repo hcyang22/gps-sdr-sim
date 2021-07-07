@@ -1732,8 +1732,16 @@ int main(int argc, char *argv[])
 
 	ionoutc_t ionoutc;
 
-	FILE *ftest_high = fopen("./test/temp.high.csv", "wb");
-	FILE *ftest_low = fopen("./test/temp.consi.csv", "wb");
+	#ifdef LOG_HIGH
+		FILE *ftest_high = fopen("./test/temp.high.csv", "wb");
+	#endif
+
+	#ifdef LOG_PHASE_DIFF
+		FILE *ftest_phase = fopen("./test/temp.phase.csv", "wb");
+	#endif
+	#ifdef LOG_MSG_IBITS
+		FILE *ftest_msg = fopen("./test/temp.msg.csv", "wb");
+	#endif
 
 	////////////////////////////////////////////////////////////
 	// Read options
@@ -2146,17 +2154,25 @@ int main(int argc, char *argv[])
 
 	tstart = clock();
 
-	fprintf(ftest_high, "Time, PRN, Range, RangeRate, Gain, CarrFreq, CodeFreq, Azimuth, Elevation\n");
-	fprintf(ftest_low, "Time, PRN, CarrierPhase Diff, CodePhase Diff\n");
-	double last_carr_phase[MAX_CHAN], last_code_phase[MAX_CHAN];
-	for (i = 0; i < MAX_CHAN; i++)
-	{
-		if (chan[i].prn >0)
+	#ifdef LOG_HIGH
+		fprintf(ftest_high, "Time, PRN, Range, RangeRate, Gain, CarrFreq, CodeFreq, Azimuth, Elevation\n");
+	#endif
+
+	#ifdef LOG_PHASE_DIFF
+		fprintf(ftest_phase, "Time, PRN, CarrierPhase Diff, CodePhase Diff\n");
+		double last_carr_phase[MAX_CHAN], last_code_phase[MAX_CHAN];
+		for (i = 0; i < MAX_CHAN; i++)
 		{
-			last_carr_phase[i] = chan[i].carr_phase;
-			last_code_phase[i] = chan[i].code_phase;
+			if (chan[i].prn >0)
+			{
+				last_carr_phase[i] = chan[i].carr_phase;
+				last_code_phase[i] = chan[i].code_phase;
+			}
 		}
-	}
+	#endif
+	#ifdef LOG_MSG_IBITS
+		fprint(ftest_msg, "Time, PRN, # Word, # Bit\n");
+	#endif
 	// Update receiver time
 	grx = incGpsTime(grx, 0.1);
 
@@ -2193,20 +2209,34 @@ int main(int argc, char *argv[])
 
 				// Signal gain
 				gain[i] = (int)(path_loss*ant_gain*128.0); // scaled by 2^7
-				fprintf(ftest_high, "%.4f, %d, %f, %f, %d, %f, %f, %f, %f\n",
-					subGpsTime(grx, g0), chan[i].prn, rho.range, rho.rate, gain[i], chan[i].f_carr,
-						chan[i].f_code, chan[i].azel[0], chan[i].azel[1]);
-			}
-		}
 
-		for (i = 0; i < MAX_CHAN; i++)
-		{
-			if (chan[i].prn >0)
-			{
-				fprintf(ftest_low, "%.2f, %d, %.12f, %.12f\n", subGpsTime(grx, g0), chan[i].prn, 
-					chan[i].carr_phase - last_carr_phase[i], chan[i].code_phase - last_code_phase[i]);
+				#ifdef LOG_HIGH
+					fprintf(ftest_high, "%.4f, %d, %f, %f, %d, %f, %f, %f, %f\n",
+						subGpsTime(grx, g0), chan[i].prn, rho.range, rho.rate, gain[i], chan[i].f_carr,
+							chan[i].f_code, chan[i].azel[0], chan[i].azel[1]);
+				#endif
 			}
 		}
+		#ifdef LOG_PHASE_DIFF
+			for (i = 0; i < MAX_CHAN; i++)
+			{
+				if (chan[i].prn >0)
+				{
+					fprintf(ftest_phase, "%.2f, %d, %.12f, %.12f\n", subGpsTime(grx, g0), chan[i].prn, 
+						chan[i].carr_phase - last_carr_phase[i], chan[i].code_phase - last_code_phase[i]);
+				}
+			}
+		#endif
+
+		#ifdef LOG_MSG_IBITS
+			for (i = 0; i < MAX_CHAN; i++)
+			{
+				if (chan[i].prn >0)
+				{
+					fprintf(ftest_msg, "%.3f, %d, %d, %d\n", subGpsTime(grx, g0), chan[i].prn, chan[i].iword, chan[i].ibit);
+				}
+			}
+		#endif
 
 		/* double time_tag = subGpsTime(grx, g0); */
 		for (isamp=0; isamp<iq_buff_size; isamp++)
@@ -2259,6 +2289,9 @@ int main(int argc, char *argv[])
 
 							// Set new navigation data bit
 							chan[i].dataBit = (int)((chan[i].dwrd[chan[i].iword]>>(29-chan[i].ibit)) & 0x1UL)*2-1;
+							#ifdef LOG_MSG_IBITS
+								fprintf(ftest_msg, "%.3f, %d, %d, %d\n", subGpsTime(grx, g0) + delt * isamp, chan[i].prn, chan[i].iword, chan[i].ibit);
+							#endif
 						}
 					}
 
@@ -2291,16 +2324,18 @@ int main(int argc, char *argv[])
 			iq_buff[isamp*2+1] = (short)q_acc;
 		}
 
-		for (i = 0; i < MAX_CHAN; i++)
-		{
-			if (chan[i].prn >0)
+		#ifdef LOG_PHASE_DIFF
+			for (i = 0; i < MAX_CHAN; i++)
 			{
-				fprintf(ftest_low, "%.2f, %d, %.12f, %.12f\n", subGpsTime(grx, g0) + 0.05, chan[i].prn, 
-					chan[i].f_carr * delt, chan[i].f_code * delt);
-				last_carr_phase[i] = chan[i].carr_phase - chan[i].f_carr * delt;
-				last_code_phase[i] = chan[i].code_phase - chan[i].f_code * delt;
+				if (chan[i].prn >0)
+				{
+					fprintf(ftest_phase, "%.2f, %d, %.12f, %.12f\n", subGpsTime(grx, g0) + 0.05, chan[i].prn, 
+						chan[i].f_carr * delt, chan[i].f_code * delt);
+					last_carr_phase[i] = chan[i].carr_phase - chan[i].f_carr * delt;
+					last_code_phase[i] = chan[i].code_phase - chan[i].f_code * delt;
+				}
 			}
-		}
+		#endif
 
 		if (data_format==SC01)
 		{
@@ -2332,7 +2367,7 @@ int main(int argc, char *argv[])
 
 		igrx = (int)(grx.sec*10.0+0.5);
 
-		if (igrx%300==0) // Every 30 seconds
+		if (igrx%300==0) // Every 30 seconds, 30s = 1 frame = 5 subframe = 50 words = 1500 bit
 		{
 			// Update navigation message
 			for (i=0; i<MAX_CHAN; i++)
@@ -2343,6 +2378,7 @@ int main(int argc, char *argv[])
 
 			// Refresh ephemeris and subframes
 			// Quick and dirty fix. Need more elegant way.
+			// TODO: Check if any inconsistancy 
 			for (sv=0; sv<MAX_SAT; sv++)
 			{
 				if (eph[ieph+1][sv].vflg==1)
@@ -2400,8 +2436,12 @@ int main(int argc, char *argv[])
 
 	// Close file
 	fclose(fp);
-	fclose(ftest_high);
-	fclose(ftest_low);
+	#ifdef LOG_HIGH 
+		fclose(ftest_high); 
+	#endif
+	#ifdef LOG_PHASE_DIFF
+		fclose(ftest_phase);
+	#endif
 
 	// Process time
 	fprintf(stderr, "Process time = %.1f [sec]\n", (double)(tend-tstart)/CLOCKS_PER_SEC);
