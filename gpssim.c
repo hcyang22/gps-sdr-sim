@@ -1328,10 +1328,10 @@ void computeCodePhase(channel_t *chan, range_t rho1, double dt)
 	chan->f_code = CODE_FREQ + chan->f_carr*CARR_TO_CODE;
 
 	// Initial code phase and data bit counters.
+	// TODO: Why this?
 	ms = ((subGpsTime(chan->rho0.g,chan->g0)+6.0) - chan->rho0.range/SPEED_OF_LIGHT)*1000.0;
 
 	ims = (int)ms;
-	// TODO: Check if this change right
 	chan->code_phase = (ms-(double)ims)*CA_SEQ_LEN; // in chip
 
 	chan->iword = ims/600; // 1 word = 30 bits = 600 ms
@@ -1570,7 +1570,7 @@ int checkSatVisibility(ephem_t eph, gpstime_t g, double *xyz, double elvMask, do
 	return (0); // Invisible
 }
 
-int allocateChannel(channel_t *chan, ephem_t *eph, ionoutc_t ionoutc, gpstime_t grx, double *xyz, double elvMask)
+int allocateChannel(channel_t *chan, ephem_t *eph, ionoutc_t ionoutc, gpstime_t grx, double *xyz, double elvMask, int init)
 {
 	int nsat=0;
 	int i,sv;
@@ -1606,7 +1606,7 @@ int allocateChannel(channel_t *chan, ephem_t *eph, ionoutc_t ionoutc, gpstime_t 
 						eph2sbf(eph[sv], ionoutc, chan[i].sbf);
 
 						// Generate navigation message
-						generateNavMsg(grx, &chan[i], 1);
+						generateNavMsg(grx, &chan[i], init);
 
 						// Initialize pseudorange
 						computeRange(&rho, eph[sv], &ionoutc, grx, xyz);
@@ -2132,7 +2132,7 @@ int main(int argc, char *argv[])
 	grx = incGpsTime(g0, 0.0);
 
 	// Allocate visible satellites
-	allocateChannel(chan, eph[ieph], ionoutc, grx, xyz[0], elvmask);
+	allocateChannel(chan, eph[ieph], ionoutc, grx, xyz[0], elvmask, 1);
 
 	for(i=0; i<MAX_CHAN; i++)
 	{
@@ -2171,7 +2171,7 @@ int main(int argc, char *argv[])
 		}
 	#endif
 	#ifdef LOG_MSG_IBITS
-		fprint(ftest_msg, "Time, PRN, # Word, # Bit\n");
+		fprintf(ftest_msg, "Time, PRN, # Word, # Bit, # ms\n");
 	#endif
 	// Update receiver time
 	grx = incGpsTime(grx, 0.1);
@@ -2215,6 +2215,10 @@ int main(int argc, char *argv[])
 						subGpsTime(grx, g0), chan[i].prn, rho.range, rho.rate, gain[i], chan[i].f_carr,
 							chan[i].f_code, chan[i].azel[0], chan[i].azel[1]);
 				#endif
+				#ifdef LOG_MSG_IBITS
+						fprintf(ftest_msg, "%.3f, %d, %d, %d, %d\n", subGpsTime(grx, g0), chan[i].prn, 
+							chan[i].iword, chan[i].ibit, chan[i].icode+chan[i].ibit*20+chan[i].iword*600);
+				#endif
 			}
 		}
 		#ifdef LOG_PHASE_DIFF
@@ -2224,16 +2228,6 @@ int main(int argc, char *argv[])
 				{
 					fprintf(ftest_phase, "%.2f, %d, %.12f, %.12f\n", subGpsTime(grx, g0), chan[i].prn, 
 						chan[i].carr_phase - last_carr_phase[i], chan[i].code_phase - last_code_phase[i]);
-				}
-			}
-		#endif
-
-		#ifdef LOG_MSG_IBITS
-			for (i = 0; i < MAX_CHAN; i++)
-			{
-				if (chan[i].prn >0)
-				{
-					fprintf(ftest_msg, "%.3f, %d, %d, %d\n", subGpsTime(grx, g0), chan[i].prn, chan[i].iword, chan[i].ibit);
 				}
 			}
 		#endif
@@ -2285,12 +2279,18 @@ int main(int argc, char *argv[])
 								if (chan[i].iword>=N_DWRD)
 									fprintf(stderr, "\nWARNING: Subframe word buffer overflow.\n");
 								*/
+								if (chan[i].iword >= 50)
+								{
+									chan[i].iword -= 50;
+									generateNavMsg(grx, &chan[i], 0);
+								}
 							}
 
 							// Set new navigation data bit
 							chan[i].dataBit = (int)((chan[i].dwrd[chan[i].iword]>>(29-chan[i].ibit)) & 0x1UL)*2-1;
 							#ifdef LOG_MSG_IBITS
-								fprintf(ftest_msg, "%.3f, %d, %d, %d\n", subGpsTime(grx, g0) + delt * isamp, chan[i].prn, chan[i].iword, chan[i].ibit);
+								fprintf(ftest_msg, "%.3f, %d, %d, %d, %d\n", subGpsTime(grx, g0), chan[i].prn, 
+									chan[i].iword, chan[i].ibit, chan[i].icode+chan[i].ibit*20+chan[i].iword*600);
 							#endif
 						}
 					}
@@ -2365,17 +2365,18 @@ int main(int argc, char *argv[])
 		// Update navigation message and channel allocation every 30 seconds
 		//
 
+		// by the end of frame, update navigation msgage
+		// for (i=0; i<MAX_CHAN; i++)
+		// {
+		// 	if (chan[i].prn>0 && chan[i].iword >= 50)
+		// 	{
+		// 		generateNavMsg(grx, &chan[i], 0);
+		// 	}
+		// }
 		igrx = (int)(grx.sec*10.0+0.5);
 
 		if (igrx%300==0) // Every 30 seconds, 30s = 1 frame = 5 subframe = 50 words = 1500 bit
 		{
-			// Update navigation message
-			for (i=0; i<MAX_CHAN; i++)
-			{
-				if (chan[i].prn>0)
-					generateNavMsg(grx, &chan[i], 0);
-			}
-
 			// Refresh ephemeris and subframes
 			// Quick and dirty fix. Need more elegant way.
 			// TODO: Check if any inconsistancy 
@@ -2402,9 +2403,9 @@ int main(int argc, char *argv[])
 
 			// Update channel allocation
 			if (!staticLocationMode)
-				allocateChannel(chan, eph[ieph], ionoutc, grx, xyz[iumd], elvmask);
+				allocateChannel(chan, eph[ieph], ionoutc, grx, xyz[iumd], elvmask, 0);
 			else
-				allocateChannel(chan, eph[ieph], ionoutc, grx, xyz[0], elvmask);
+				allocateChannel(chan, eph[ieph], ionoutc, grx, xyz[0], elvmask, 0);
 
 			// Show details about simulated channels
 			if (verb==TRUE)
@@ -2441,6 +2442,9 @@ int main(int argc, char *argv[])
 	#endif
 	#ifdef LOG_PHASE_DIFF
 		fclose(ftest_phase);
+	#endif
+	#ifdef LOG_MSG_IBITS
+		fclose(ftest_msg);
 	#endif
 
 	// Process time

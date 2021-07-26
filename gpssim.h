@@ -4,7 +4,7 @@
 #define FLOAT_CARR_PHASE // For RKT simulation. Higher computational load, but smoother carrier phase.
 // #define LOG_HIGH
 // #define LOG_PHASE_DIFF
-#define LOG_MSG
+#define LOG_MSG_IBITS
 
 #define TRUE	(1)
 #define FALSE	(0)
