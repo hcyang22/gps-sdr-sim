@@ -2,9 +2,9 @@
 #define GPSSIM_H
 
 #define FLOAT_CARR_PHASE // For RKT simulation. Higher computational load, but smoother carrier phase.
-// #define LOG_HIGH
+#define LOG_HIGH
 // #define LOG_PHASE_DIFF
-#define LOG_MSG_IBITS
+// #define LOG_MSG_IBITS
 
 #define TRUE	(1)
 #define FALSE	(0)
@@ -20,7 +20,7 @@
 
 /*! \brief Maximum number of user motion points */
 #ifndef USER_MOTION_SIZE
-#define USER_MOTION_SIZE (3000) // max duration at 10Hz
+#define USER_MOTION_SIZE (300000) // max duration at 1000Hz
 #endif
 
 /*! \brief Maximum duration for static mode*/

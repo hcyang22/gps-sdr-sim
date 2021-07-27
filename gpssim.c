@@ -1665,6 +1665,7 @@ void usage(void)
 		"  -b <iq_bits>     I/Q data format [1/8/16] (default: 16)\n"
 		"  -i               Disable ionospheric delay for spacecraft scenario\n"
 		"  -v               Show details about simulated channels\n",
+		//TODO: Change here for 1000Hz
 		((double)USER_MOTION_SIZE) / 10.0, STATIC_MAX_DURATION);
 
 	return;
@@ -1748,6 +1749,7 @@ int main(int argc, char *argv[])
 	////////////////////////////////////////////////////////////
 
 	// Default options
+	double delta_t = 0.001; // Doppler updating frequency, 1000Hz by default
 	navfile[0] = 0;
 	umfile[0] = 0;
 	strcpy(outfile, "gpssim.bin");
@@ -1755,7 +1757,7 @@ int main(int argc, char *argv[])
 	data_format = SC16;
 	g0.week = -1; // Invalid start time
 	iduration = USER_MOTION_SIZE;
-	duration = (double)iduration/10.0; // Default duration
+	duration = (double)iduration * delta_t; // Default duration
 	verb = FALSE;
 	ionoutc.enable = TRUE;
 
@@ -1877,17 +1879,17 @@ int main(int argc, char *argv[])
 		llh[2] = 10.0;
 	}
 
-	if (duration<0.0 || (duration>((double)USER_MOTION_SIZE)/10.0 && !staticLocationMode) || (duration>STATIC_MAX_DURATION && staticLocationMode))
+	if (duration<0.0 || (duration>((double)USER_MOTION_SIZE)*delta_t && !staticLocationMode) || (duration>STATIC_MAX_DURATION && staticLocationMode))
 	{
 		fprintf(stderr, "ERROR: Invalid duration.\n");
 		exit(1);
 	}
-	iduration = (int)(duration*10.0 + 0.5);
+	iduration = (int)(duration / delta_t + 0.5);
 
 	// Buffer size	
-	samp_freq = floor(samp_freq/10.0);
-	iq_buff_size = (int)samp_freq; // samples per 0.1sec
-	samp_freq *= 10.0;
+	samp_freq = floor(samp_freq * delta_t);
+	iq_buff_size = (int)samp_freq; // samples per delta_t second
+	samp_freq /= delta_t;
 
 	delt = 1.0/samp_freq;
 
@@ -1897,6 +1899,7 @@ int main(int argc, char *argv[])
 
 	if (!staticLocationMode)
 	{
+		// FIXME: Update non-static mode in 1000Hz
 		// Read user motion file
 		if (nmeaGGA==TRUE)
 			numd = readNmeaGGA(xyz, umfile);
@@ -2042,7 +2045,7 @@ int main(int argc, char *argv[])
 
 	fprintf(stderr, "Start time = %4d/%02d/%02d,%02d:%02d:%02.0f (%d:%.0f)\n", 
 		t0.y, t0.m, t0.d, t0.hh, t0.mm, t0.sec, g0.week, g0.sec);
-	fprintf(stderr, "Duration = %.1f [sec]\n", ((double)numd)/10.0);
+	fprintf(stderr, "Duration = %.1f [sec]\n", ((double)numd)*delta_t);
 
 	// Select the current set of ephemerides
 	ieph = -1;
@@ -2174,7 +2177,7 @@ int main(int argc, char *argv[])
 		fprintf(ftest_msg, "Time, PRN, # Word, # Bit, # ms\n");
 	#endif
 	// Update receiver time
-	grx = incGpsTime(grx, 0.1);
+	grx = incGpsTime(grx, delta_t);
 
 	for (iumd=1; iumd<numd; iumd++)
 	{
@@ -2196,7 +2199,7 @@ int main(int argc, char *argv[])
 				chan[i].azel[1] = rho.azel[1];
 
 				// Update code phase and data bit counters
-				computeCodePhase(&chan[i], rho, 0.1);
+				computeCodePhase(&chan[i], rho, delta_t);
 #ifndef FLOAT_CARR_PHASE
 				chan[i].carr_phasestep = (int)round(512.0 * 65536.0 * chan[i].f_carr * delt);
 #endif
@@ -2373,9 +2376,9 @@ int main(int argc, char *argv[])
 		// 		generateNavMsg(grx, &chan[i], 0);
 		// 	}
 		// }
-		igrx = (int)(grx.sec*10.0+0.5);
+		igrx = (int)(grx.sec/delta_t+0.5);
 
-		if (igrx%300==0) // Every 30 seconds, 30s = 1 frame = 5 subframe = 50 words = 1500 bit
+		if (igrx%(int)(30.0 / delta_t)==0) // Every 30 seconds, 30s = 1 frame = 5 subframe = 50 words = 1500 bit
 		{
 			// Refresh ephemeris and subframes
 			// Quick and dirty fix. Need more elegant way.
@@ -2421,7 +2424,7 @@ int main(int argc, char *argv[])
 		}
 
 		// Update receiver time
-		grx = incGpsTime(grx, 0.1);
+		grx = incGpsTime(grx, delta_t);
 
 		// Update time counter
 		fprintf(stderr, "\rTime into run = %4.1f", subGpsTime(grx, g0));
